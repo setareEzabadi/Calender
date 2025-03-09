@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import moment from "moment-jalaali";
 import styles from "./Calender.module.css";
@@ -54,10 +54,8 @@ const MonthCalendar = ({
     firstDay,
     season,
     monthIndex,
-    currentJMonth,
-    currentJDate,
-    currentDayClicked,
-    setCurrentDayClicked,
+    clickedDates,
+    updateClickedDates,
 }) => {
     const router = useRouter();
     const blanks = Array(firstDay).fill(null);
@@ -65,6 +63,10 @@ const MonthCalendar = ({
     const totalCells = blanks.length + daysArray.length;
     const extraCells = Array((7 - (totalCells % 7)) % 7).fill(null);
     const cells = [...blanks, ...daysArray, ...extraCells];
+
+    // تعیین تاریخ امروز به صورت فرمت شمسی (مثلاً "1401-7-25")
+    const todayMoment = moment();
+    const todayKey = todayMoment.format("jYYYY-jM-jD");
 
     return (
         <div className={`${styles.monthContainer} ${styles[season]}`}>
@@ -78,34 +80,40 @@ const MonthCalendar = ({
                         </div>
                     ))}
                     {cells.map((cell, idx) => {
-                        // اگر سلول عددی باشد، امکان بررسی روز جاری وجود دارد
-                        const isCurrentDayCell =
-                            cell === currentJDate && monthIndex === currentJMonth;
-                        let cellClass = styles.dayCell;
-                        const now = moment();
-                        if (isCurrentDayCell) {
-                            if (currentDayClicked) {
-                                cellClass = `${styles.dayCell} ${styles.clickedDay}`;
-                            } else if (now.isAfter(now.clone().endOf("day"))) {
-                                // اگر زمان روز به پایان رسیده و هنوز کلیک نشده است
-                                cellClass = `${styles.dayCell} ${styles.expiredDay}`;
-                            }
+                        if (!cell) {
+                            return <div key={idx} className={styles.dayCell}></div>;
                         }
+                        // ایجاد کلید تاریخ به فرمت "سال-ماه-روز"
+                        const dateKey = `${currentJYear}-${monthIndex + 1}-${cell}`;
+                        const cellMoment = moment(dateKey, "jYYYY-jM-jD");
+
+                        let cellClass = styles.dayCell;
+                        let clickable = false;
+
+                        if (clickedDates[dateKey]) {
+                            // اگر تاریخ قبلاً کلیک شده باشد، به سبز نمایش داده می‌شود
+                            cellClass = `${styles.dayCell} ${styles.clickedDay}`;
+                        } else if (cellMoment.isBefore(todayMoment, 'day')) {
+                            // روزهای گذشته (و بدون کلیک) به قرمز نمایش داده می‌شوند
+                            cellClass = `${styles.dayCell} ${styles.expiredDay}`;
+                        } else if (cellMoment.isSame(todayMoment, 'day')) {
+                            // روز جاری قابل کلیک است
+                            clickable = true;
+                        }
+
                         return (
                             <div
                                 key={idx}
                                 className={cellClass}
                                 onClick={() => {
-                                    if (isCurrentDayCell && !currentDayClicked) {
-                                        setCurrentDayClicked(true);
-                                        // هدایت کاربر به صفحه مورد نظر (مثلاً /target)
+                                    if (clickable) {
+                                        updateClickedDates(dateKey);
                                         router.push("/target");
                                     }
                                 }}
-                                // اگر سلول روز جاری است، نشانگر موس را تغییر می‌دهیم
-                                style={isCurrentDayCell ? { cursor: "pointer" } : {}}
+                                style={clickable ? { cursor: "pointer" } : {}}
                             >
-                                {cell || ""}
+                                {cell}
                             </div>
                         );
                     })}
@@ -116,7 +124,7 @@ const MonthCalendar = ({
 };
 
 const Calender = () => {
-    // افزودن ایندکس به هر ماه
+    // دسته‌بندی ماه‌ها بر اساس فصل
     const seasons = {
         "بهار": [],
         "تابستان": [],
@@ -132,10 +140,23 @@ const Calender = () => {
         });
     });
 
-    // تعیین ماه و روز جاری (jMonth: 0-indexed، jDate: عدد روز)
-    const currentJMonth = moment().jMonth();
-    const currentJDate = moment().jDate();
-    const [currentDayClicked, setCurrentDayClicked] = useState(false);
+    // نگهداری وضعیت روزهای کلیک شده در localStorage
+    const [clickedDates, setClickedDates] = useState({});
+
+    useEffect(() => {
+        const stored = localStorage.getItem("clickedDates");
+        if (stored) {
+            setClickedDates(JSON.parse(stored));
+        }
+    }, []);
+
+    const updateClickedDates = (dateKey) => {
+        setClickedDates((prev) => {
+            const newClickedDates = { ...prev, [dateKey]: true };
+            localStorage.setItem("clickedDates", JSON.stringify(newClickedDates));
+            return newClickedDates;
+        });
+    };
 
     return (
         <div className={styles.pageContainer}>
@@ -143,9 +164,7 @@ const Calender = () => {
             <div className={styles.seasonsContainer}>
                 {Object.entries(seasons).map(([season, months]) => (
                     <div key={season} className={styles.seasonSection}>
-                        <h2
-                            className={`${styles.seasonTitle} ${styles[seasonClassMap[season]]}`}
-                        >
+                        <h2 className={`${styles.seasonTitle} ${styles[seasonClassMap[season]]}`}>
                             {season}
                         </h2>
                         <div className={styles.monthsContainer}>
@@ -157,10 +176,8 @@ const Calender = () => {
                                     firstDay={month.firstDay}
                                     season={seasonClassMap[season]}
                                     monthIndex={month.index}
-                                    currentJMonth={currentJMonth}
-                                    currentJDate={currentJDate}
-                                    currentDayClicked={currentDayClicked}
-                                    setCurrentDayClicked={setCurrentDayClicked}
+                                    clickedDates={clickedDates}
+                                    updateClickedDates={updateClickedDates}
                                 />
                             ))}
                         </div>
